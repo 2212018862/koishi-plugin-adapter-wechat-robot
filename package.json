@@ -1,0 +1,43 @@
+{
+  "name": "koishi-plugin-wechat-robot-adapter",
+  "version": "1.0.0",
+  "description": "WeChat robot adapter for wechat-robot-client with MySQL polling",
+  "main": "src/index.js",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "license": "MIT",
+  "author": "yang523",
+  "homepage": "https://github.com/yang523/koishi-plugin-wechat-robot-adapter",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yang523/koishi-plugin-wechat-robot-adapter.git"
+  },
+  "keywords": [
+    "koishi",
+    "plugin",
+    "wechat",
+    "wechat-robot",
+    "adapter",
+    "chatbot"
+  ],
+  "koishi": {
+    "description": {
+      "en": "WeChat robot adapter for wechat-robot-client",
+      "zh": "连接 wechat-robot-client 的微信机器人适配器，支持 MySQL 轮询获取消息"
+    },
+    "service": {
+      "required": [
+        "http",
+        "server"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "koishi": "^4.0.0"
+  },
+  "dependencies": {
+    "mysql2": "^3.0.0"
+  }
+}
