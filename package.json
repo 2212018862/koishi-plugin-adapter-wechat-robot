@@ -8,11 +8,11 @@
     "README.md"
   ],
   "license": "MIT",
-  "author": "yang523",
-  "homepage": "https://github.com/yang523/koishi-plugin-wechat-robot-adapter",
+  "author": "2212018862",
+  "homepage": "https://github.com/2212018862/koishi-plugin-wechat-robot-adapter",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yang523/koishi-plugin-wechat-robot-adapter.git"
+    "url": "git+https://github.com/2212018862/koishi-plugin-wechat-robot-adapter.git"
   },
   "keywords": [
     "koishi",
