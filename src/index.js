@@ -34,6 +34,11 @@ class WeChatRobotBot extends Bot {
     this._lastMsgId = 0;
     this._pollTimer = null;
     this._mysqlPool = null;
+    this._healthFails = 0;
+    this._healthHttp = ctx.http.extend({
+      endpoint: config.endpoint,
+      timeout: 3000, // short timeout for health checks
+    });
   }
 
   async start() {
@@ -127,6 +132,7 @@ class WeChatRobotBot extends Bot {
   }
 
   // ======== Health Check ========
+  // Only marks disconnected after 3 consecutive failures to avoid flickering.
 
   _startHealthCheck() {
     if (this._healthTimer) return;
@@ -135,19 +141,32 @@ class WeChatRobotBot extends Bot {
 
   async _healthCheck() {
     try {
-      const loggedIn = await this.isLoggedIn();
-      if (loggedIn && this.status !== 1) {
-        try {
-          const info = await this.getCachedInfo();
-          if (info?.Wxid) this.selfId = info.Wxid;
-        } catch {}
-        this.status = 1;
-        this.logger.info("health: robot reconnected");
-      } else if (!loggedIn && this.status === 1) {
-        this.status = 0;
-        this.logger.warn("health: robot disconnected");
+      const r = await this._healthHttp.get("/api/v1/robot/is-loggedin");
+      const loggedIn = r && (r.data === true || r === true);
+      if (loggedIn) {
+        this._healthFails = 0;
+        if (this.status !== 1) {
+          try {
+            const info = await this._http.get("/api/v1/robot/get-cached-info");
+            if (info?.data?.Wxid) this.selfId = info.data.Wxid;
+          } catch {}
+          this.status = 1;
+          this.logger.info("health: robot reconnected");
+        }
+      } else {
+        this._healthFails++;
+        if (this._healthFails >= 3 && this.status === 1) {
+          this.status = 0;
+          this.logger.warn("health: robot disconnected (3 failures)");
+        }
       }
-    } catch {}
+    } catch {
+      this._healthFails++;
+      if (this._healthFails >= 3 && this.status === 1) {
+        this.status = 0;
+        this.logger.warn("health: robot disconnected (3 timeouts)");
+      }
+    }
   }
 
   // ======== Polling ========
