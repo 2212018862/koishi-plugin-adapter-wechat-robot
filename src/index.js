@@ -136,12 +136,8 @@ class WeChatRobotBot extends Bot {
       const loggedIn = await this.isLoggedIn();
       if (!loggedIn) { this.logger.warn("not logged in"); this.status = 0; return; }
       try {
-        const info = await this.getCachedInfo();
-        if (info?.Wxid) this.selfId = info.Wxid;
-        if (info?.NickName) this.username = info.NickName;
-        if (info?.HeadUrl) this.avatar = info.HeadUrl;
+        await this._updateBotInfo();
       } catch {}
-      if (!this.selfId) this.selfId = this.config.selfId;
       this.status = 1;
       this.logger.info("robot %s connected (mode=%s)", this.selfId, this.mode);
     } catch (e) {
@@ -235,12 +231,7 @@ class WeChatRobotBot extends Bot {
       if (loggedIn) {
         this._healthFails = 0;
         if (this.status !== 1) {
-          try {
-            const info = await this._http.get("/api/v1/robot/get-cached-info");
-            if (info?.data?.Wxid) this.selfId = info.data.Wxid;
-            if (info?.data?.NickName) this.username = info.data.NickName;
-            if (info?.data?.HeadUrl) this.avatar = info.data.HeadUrl;
-          } catch {}
+          await this._updateBotInfo();
           this.status = 1;
           this.logger.info("health: robot reconnected");
         }
@@ -309,6 +300,16 @@ class WeChatRobotBot extends Bot {
   async isLoggedIn() {
     try { const r = await this._http.get("/api/v1/robot/is-loggedin"); return r && (r.data === true || r === true); }
     catch { return false; }
+  }
+
+  async _updateBotInfo() {
+    try {
+      const info = await this.getCachedInfo();
+      if (info?.Wxid) this.selfId = info.Wxid;
+      if (info?.NickName) this.username = info.NickName;
+      if (info?.HeadUrl) this.avatar = info.HeadUrl;
+    } catch {}
+    if (!this.selfId) this.selfId = this.config.selfId;
   }
 
   async getCachedInfo() {
