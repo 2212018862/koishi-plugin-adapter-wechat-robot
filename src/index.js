@@ -56,23 +56,30 @@ const webhookFields = {
   webhookSecret: Schema.string().description(webhookSecretDesc),
 };
 
-const Config = Schema.union([
+const Config = Schema.intersect([
   Schema.object({
-    mode: Schema.const("webhook").required(),
-    ...commonFields,
-    ...webhookFields,
+    mode: Schema.union([
+      Schema.const("webhook").description("Webhook 推荐，client 主动推送消息，毫秒级延迟"),
+      Schema.const("polling").description("数据库轮询，适合 Koishi 在内网无法接收 Webhook 的场景"),
+      Schema.const("mixed").description("同时启用 Webhook 和轮询，双保险不丢消息"),
+    ]).default("webhook").description("消息接收模式"),
   }),
-  Schema.object({
-    mode: Schema.const("polling").required(),
-    ...commonFields,
-    ...pollingFields,
-  }),
-  Schema.object({
-    mode: Schema.const("mixed").required(),
-    ...commonFields,
-    ...webhookFields,
-    ...pollingFields,
-  }),
+  Schema.union([
+    Schema.object({
+      mode: Schema.const("webhook"),
+      ...webhookFields,
+    }),
+    Schema.object({
+      mode: Schema.const("polling"),
+      ...pollingFields,
+    }),
+    Schema.object({
+      mode: Schema.const("mixed"),
+      ...webhookFields,
+      ...pollingFields,
+    }),
+  ]),
+  Schema.object(commonFields),
 ]).description(modeDesc).default({ mode: "webhook", endpoint: "" });
 
 // ============ Bot ============

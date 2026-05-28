@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.2 (2026-05-28)
+
+### 🐛 Bug Fix
+
+- 修复配置界面模式选择器不显示选项的问题（改用 `Schema.intersect` + `Schema.union` 组合）
+
 ## 2.0.1 (2026-05-28)
 
 ### 🐛 Bug Fix
