@@ -1,21 +1,79 @@
 const { Schema, Bot, MessageEncoder } = require("koishi");
 const mysql = require("mysql2/promise");
 
-// ============ Bot Config ============
-const Config = Schema.object({
-  endpoint: Schema.string().description("wechat-robot-client API 地址").required(),
-  selfId: Schema.string().description("机器人 wxid").required(),
-  timeout: Schema.number().description("请求超时(ms)").default(30000),
-  mysqlHost: Schema.string().description("MySQL 主机").default("127.0.0.1"),
-  mysqlPort: Schema.number().description("MySQL 端口").default(3306),
-  mysqlUser: Schema.string().description("MySQL 用户名").default("root"),
-  mysqlPassword: Schema.string().description("MySQL 密码"),
-  mysqlDatabase: Schema.string().description("MySQL 数据库").default("wechat_robot"),
-  pollInterval: Schema.number().description("轮询间隔(秒)").default(2),
-  webhookEnabled: Schema.boolean().description("启用 Webhook 接收消息(备选)").default(true),
-  webhookPath: Schema.string().description("Webhook 回调路径").default("/wechat-robot/callback"),
-  webhookSecret: Schema.string().description("Webhook 签名密钥 (可选)"),
-});
+// Helper: get string value from Go's *string JSON (key may be "String" or "string")
+function getString(obj) {
+  if (!obj) return "";
+  return obj.String || obj.string || "";
+}
+
+// ============ Schema ============
+
+const modeDesc = `消息接收模式：
+• **Webhook（推荐）**：wechat-robot-client 主动将消息 POST 到 Koishi，实时性最好（毫秒级延迟），配置简单，无需数据库连接。
+• **数据库轮询**：Koishi 定时查询 MySQL 数据库获取新消息，适合 Webhook 不可达的场景（如 Koishi 在内网），需要配置 MySQL 连接信息。
+• **混合模式**：同时启用 Webhook 和数据库轮询，Webhook 负责实时推送，轮询作为兜底确保不丢消息。`;
+
+const endpointDesc = "wechat-robot-client 的 API 地址，例如 http://127.0.0.1:9000。该地址用于健康检查和发送消息，需要 Koishi 能直接访问。";
+const selfIdDesc = "机器人的微信 wxid，例如 wxid_xxxxxxxxxxxx。首次连接时会自动获取，可留空。";
+const timeoutDesc = "调用 client API 的超时时间（毫秒），网络较慢时可适当增大。";
+
+const mysqlHostDesc = "MySQL 数据库地址，需与 wechat-robot-client 使用同一个数据库。同机部署通常为 wechat-admin-mysql（Docker 容器名）或 127.0.0.1。";
+const mysqlPortDesc = "MySQL 端口，默认 3306。";
+const mysqlUserDesc = "MySQL 用户名。如果是 Docker 部署，通常为 robot_xxxx（在管理后台创建机器人时自动生成）。";
+const mysqlPasswordDesc = "MySQL 密码。如果使用数据库轮询或混合模式，此项必填。留空则跳过数据库连接。";
+const mysqlDatabaseDesc = "数据库名称，通常与 robot_code 相同，例如 x8ov8zyVz79Kz5Dq。";
+const pollIntervalDesc = "数据库轮询间隔（秒）。设为 0 则禁用轮询（仅在混合模式下有意义）。默认 2 秒。";
+
+const webhookPathDesc = "Webhook 回调路径，wechat-robot-client 会向此路径 POST 消息。需要在 client 的数据库中配置 webhook_url 指向 Koishi 的此路径。";
+const webhookSecretDesc = "Webhook 签名密钥（可选）。如果设置了，client 发送 webhook 时需携带对应的签名 header。";
+
+// Common fields shared by all modes
+const commonFields = {
+  endpoint: Schema.string().description(endpointDesc).required(),
+  selfId: Schema.string().description(selfIdDesc).default(""),
+  timeout: Schema.number().description(timeoutDesc).default(30000),
+};
+
+// MySQL fields
+const mysqlFields = {
+  mysqlHost: Schema.string().description(mysqlHostDesc).default("127.0.0.1"),
+  mysqlPort: Schema.number().description(mysqlPortDesc).default(3306),
+  mysqlUser: Schema.string().description(mysqlUserDesc).default("root"),
+  mysqlPassword: Schema.string().description(mysqlPasswordDesc),
+  mysqlDatabase: Schema.string().description(mysqlDatabaseDesc).default("wechat_robot"),
+};
+
+// Polling fields
+const pollingFields = {
+  ...mysqlFields,
+  pollInterval: Schema.number().description(pollIntervalDesc).default(2),
+};
+
+// Webhook fields
+const webhookFields = {
+  webhookPath: Schema.string().description(webhookPathDesc).default("/wechat-robot/callback"),
+  webhookSecret: Schema.string().description(webhookSecretDesc),
+};
+
+const Config = Schema.union([
+  Schema.object({
+    mode: Schema.const("webhook").description("接收模式"),
+    ...commonFields,
+    ...webhookFields,
+  }),
+  Schema.object({
+    mode: Schema.const("polling").description("接收模式"),
+    ...commonFields,
+    ...pollingFields,
+  }),
+  Schema.object({
+    mode: Schema.const("mixed").description("接收模式"),
+    ...commonFields,
+    ...webhookFields,
+    ...pollingFields,
+  }),
+]).description(modeDesc).default({ mode: "webhook", endpoint: "" });
 
 // ============ Bot ============
 class WeChatRobotBot extends Bot {
@@ -37,61 +95,23 @@ class WeChatRobotBot extends Bot {
     this._healthFails = 0;
     this._healthHttp = ctx.http.extend({
       endpoint: config.endpoint,
-      timeout: 3000, // short timeout for health checks
+      timeout: 3000,
     });
   }
 
-  async start() {
-    // 1. Register webhook (fallback method)
-    if (this.config.webhookEnabled !== false) {
-      const path = this.config.webhookPath || "/wechat-robot/callback";
-      const secret = this.config.webhookSecret;
-      const bot = this;
+  get mode() {
+    return this.config.mode || "webhook";
+  }
 
-      this.ctx.server.post(path, (koaCtx) => {
-        if (secret) {
-          const sig = koaCtx.headers["x-signature"] || koaCtx.headers["authorization"];
-          if (sig !== secret) { koaCtx.status = 403; koaCtx.body = { success: false }; return; }
-        }
-        koaCtx.status = 200;
-        koaCtx.body = { success: true };
-        try {
-          const body = koaCtx.request.body;
-          if (!body || !body.Data || !body.Data.AddMsgs) return;
-          handleSyncMessage(bot, body.Data).catch((e) =>
-            bot.logger.error("callback error: %s", e.message || e)
-          );
-        } catch (e) {
-          bot.logger.warn("webhook body error: %s (raw=%s)", e.message || e,
-            koaCtx.request.body ? typeof koaCtx.request.body : "no-body");
-        }
-      });
-      this.logger.info("webhook registered at %s", path);
+  async start() {
+    // 1. Register webhook if mode is webhook or mixed
+    if (this.mode === "webhook" || this.mode === "mixed") {
+      this._registerWebhook();
     }
 
-    // 2. Connect to MySQL for polling
-    if (this.config.mysqlPassword) {
-      try {
-        this._mysqlPool = mysql.createPool({
-          host: this.config.mysqlHost,
-          port: this.config.mysqlPort,
-          user: this.config.mysqlUser,
-          password: this.config.mysqlPassword,
-          database: this.config.mysqlDatabase,
-          waitForConnections: true,
-          connectionLimit: 2,
-          queueLimit: 0,
-          connectTimeout: 5000,
-        });
-        const [rows] = await this._mysqlPool.query("SELECT MAX(id) as maxId FROM messages");
-        this._lastMsgId = (rows[0] && rows[0].maxId) || 0;
-        this.logger.info("mysql connected, last msg_id = %d", this._lastMsgId);
-      } catch (e) {
-        this.logger.warn("mysql connect failed, falling back to webhook only: %s", e.message || e);
-        this._mysqlPool = null;
-      }
-    } else {
-      this.logger.warn("mysql password not configured, falling back to webhook only");
+    // 2. Connect to MySQL if mode is polling or mixed
+    if (this.mode === "polling" || this.mode === "mixed") {
+      await this._initMySQL();
     }
 
     // 3. Start polling if MySQL is available
@@ -108,9 +128,13 @@ class WeChatRobotBot extends Bot {
       if (!running) { this.logger.warn("service not running"); this.status = 0; return; }
       const loggedIn = await this.isLoggedIn();
       if (!loggedIn) { this.logger.warn("not logged in"); this.status = 0; return; }
-      try { const info = await this.getCachedInfo(); if (info?.Wxid) this.selfId = info.Wxid; } catch {}
+      try {
+        const info = await this.getCachedInfo();
+        if (info?.Wxid) this.selfId = info.Wxid;
+      } catch {}
+      if (!this.selfId) this.selfId = this.config.selfId;
       this.status = 1;
-      this.logger.info("robot %s connected (polling every %ds)", this.selfId, this.config.pollInterval);
+      this.logger.info("robot %s connected (mode=%s)", this.selfId, this.mode);
     } catch (e) {
       this.logger.error("connect failed: %s", e.message || e);
       this.status = 0;
@@ -131,8 +155,64 @@ class WeChatRobotBot extends Bot {
     this.logger.info("robot stopped");
   }
 
+  // ======== Webhook ========
+
+  _registerWebhook() {
+    const path = this.config.webhookPath || "/wechat-robot/callback";
+    const secret = this.config.webhookSecret;
+    const bot = this;
+
+    this.ctx.server.post(path, (koaCtx) => {
+      if (secret) {
+        const sig = koaCtx.headers["x-signature"] || koaCtx.headers["authorization"];
+        if (sig !== secret) { koaCtx.status = 403; koaCtx.body = { success: false }; return; }
+      }
+      koaCtx.status = 200;
+      koaCtx.body = { success: true };
+      try {
+        const body = koaCtx.request.body;
+        if (!body) return;
+        const syncData = body.Data || body;
+        if (!syncData.AddMsgs) return;
+        handleSyncMessage(bot, syncData).catch((e) =>
+          bot.logger.error("webhook error: %s", e.message || e)
+        );
+      } catch (e) {
+        bot.logger.warn("webhook parse error: %s", e.message || e);
+      }
+    });
+    this.logger.info("webhook registered at %s", path);
+  }
+
+  // ======== MySQL ========
+
+  async _initMySQL() {
+    if (!this.config.mysqlPassword) {
+      this.logger.warn("mysql password not configured, skipping database connection");
+      return;
+    }
+    try {
+      this._mysqlPool = mysql.createPool({
+        host: this.config.mysqlHost,
+        port: this.config.mysqlPort,
+        user: this.config.mysqlUser,
+        password: this.config.mysqlPassword,
+        database: this.config.mysqlDatabase,
+        waitForConnections: true,
+        connectionLimit: 2,
+        queueLimit: 0,
+        connectTimeout: 5000,
+      });
+      const [rows] = await this._mysqlPool.query("SELECT MAX(id) as maxId FROM messages");
+      this._lastMsgId = (rows[0] && rows[0].maxId) || 0;
+      this.logger.info("mysql connected, last msg_id = %d", this._lastMsgId);
+    } catch (e) {
+      this.logger.warn("mysql connect failed: %s", e.message || e);
+      this._mysqlPool = null;
+    }
+  }
+
   // ======== Health Check ========
-  // Only marks disconnected after 3 consecutive failures to avoid flickering.
 
   _startHealthCheck() {
     if (this._healthTimer) return;
@@ -172,8 +252,10 @@ class WeChatRobotBot extends Bot {
   // ======== Polling ========
 
   _startPolling() {
-    const interval = (this.config.pollInterval || 2) * 1000;
-    this._pollTimer = setInterval(() => this._poll(), interval);
+    if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+    const pollSec = this.config.pollInterval ?? 2;
+    if (pollSec <= 0) { this.logger.info("polling disabled (pollInterval=%d)", pollSec); return; }
+    this._pollTimer = setInterval(() => this._poll(), pollSec * 1000);
   }
 
   _stopPolling() {
@@ -244,7 +326,6 @@ class WeChatRobotBot extends Bot {
 
 // ============ Message Encoder ============
 WeChatRobotBot.MessageEncoder = class extends MessageEncoder {
-  // Override render to skip visit() — our flush handles everything directly
   async render() {}
 
   async flush() {
@@ -273,18 +354,19 @@ async function handleSyncMessage(bot, syncMessage) {
   }
 }
 
+// ============ Session from Webhook Message ============
 function toSession(bot, msg) {
   if (msg.MsgType === 10000 || msg.MsgType === 10002) return undefined;
   const session = bot.session();
   session.type = "message";
-  const fromUser = msg.FromUserName?.String || "";
+  const fromUser = getString(msg.FromUserName) || "";
   const isChatRoom = fromUser.endsWith("@chatroom");
   session.guildId = fromUser;
   session.channelId = fromUser;
   session.messageId = String(msg.MsgId || msg.NewMsgId || "");
 
   let senderId = fromUser;
-  let content = msg.Content?.String || "";
+  let content = getString(msg.Content) || "";
   if (isChatRoom) {
     const colon = content.indexOf(":");
     if (colon > 0) { senderId = content.substring(0, colon); content = content.substring(colon + 1).trim(); }
@@ -345,11 +427,7 @@ function toSessionFromRow(bot, row) {
     case 47: session.content = "[表情]"; break;
     case 48: session.content = "[位置]"; break;
     case 42: session.content = "[名片]"; break;
-    case 49: {
-      const t = content.match(/<title>(.*?)<\/title>/s);
-      session.content = t?.[1]?.trim() || "[应用消息]";
-      break;
-    }
+    case 49: { const t = content.match(/<title>(.*?)<\/title>/s); session.content = t?.[1]?.trim() || "[应用消息]"; break; }
     default: session.content = "[消息类型:" + msgType + "]"; break;
   }
   if (!session.content) return undefined;

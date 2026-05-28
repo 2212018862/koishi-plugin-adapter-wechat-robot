@@ -1,18 +1,19 @@
 {
-  "name": "koishi-plugin-wechat-robot-adapter",
-  "version": "1.0.1",
-  "description": "WeChat robot adapter for wechat-robot-client with MySQL polling",
+  "name": "koishi-plugin-adapter-wechat-robot",
+  "version": "2.0.0",
+  "description": "WeChat robot adapter for wechat-robot-client with webhook and MySQL polling support",
   "main": "src/index.js",
   "files": [
     "src",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "license": "MIT",
   "author": "2212018862",
-  "homepage": "https://github.com/2212018862/koishi-plugin-wechat-robot-adapter",
+  "homepage": "https://github.com/2212018862/koishi-plugin-adapter-wechat-robot",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/2212018862/koishi-plugin-wechat-robot-adapter.git"
+    "url": "git+https://github.com/2212018862/koishi-plugin-adapter-wechat-robot.git"
   },
   "keywords": [
     "koishi",
@@ -20,12 +21,13 @@
     "wechat",
     "wechat-robot",
     "adapter",
-    "chatbot"
+    "chatbot",
+    "webhook"
   ],
   "koishi": {
     "description": {
       "en": "WeChat robot adapter for wechat-robot-client",
-      "zh": "连接 wechat-robot-client 的微信机器人适配器，支持 MySQL 轮询获取消息"
+      "zh": "连接 wechat-robot-client 的微信机器人适配器，支持 Webhook 实时推送和 MySQL 轮询两种消息接收模式"
     },
     "service": {
       "required": [
