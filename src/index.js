@@ -80,7 +80,7 @@ const Config = Schema.intersect([
     }),
   ]),
   Schema.object(commonFields),
-]).description(modeDesc).default({ mode: "webhook", endpoint: "" });
+]).description("消息接收模式").default({ mode: "webhook", endpoint: "" });
 
 // ============ Bot ============
 class WeChatRobotBot extends Bot {
@@ -306,8 +306,13 @@ class WeChatRobotBot extends Bot {
     try {
       const info = await this.getCachedInfo();
       if (info?.Wxid) this.selfId = info.Wxid;
-      if (info?.NickName) this.username = info.NickName;
-      if (info?.HeadUrl) this.avatar = info.HeadUrl;
+      if (info?.NickName || info?.HeadUrl) {
+        this.user = {
+          ...this.user,
+          ...(info?.NickName ? { name: info.NickName } : {}),
+          ...(info?.HeadUrl ? { avatar: info.HeadUrl } : {}),
+        };
+      }
     } catch {}
     if (!this.selfId) this.selfId = this.config.selfId;
   }
