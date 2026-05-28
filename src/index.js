@@ -58,17 +58,17 @@ const webhookFields = {
 
 const Config = Schema.union([
   Schema.object({
-    mode: Schema.const("webhook").description("接收模式"),
+    mode: Schema.const("webhook").required(),
     ...commonFields,
     ...webhookFields,
   }),
   Schema.object({
-    mode: Schema.const("polling").description("接收模式"),
+    mode: Schema.const("polling").required(),
     ...commonFields,
     ...pollingFields,
   }),
   Schema.object({
-    mode: Schema.const("mixed").description("接收模式"),
+    mode: Schema.const("mixed").required(),
     ...commonFields,
     ...webhookFields,
     ...pollingFields,
