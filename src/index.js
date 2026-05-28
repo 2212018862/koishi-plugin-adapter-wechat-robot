@@ -138,6 +138,8 @@ class WeChatRobotBot extends Bot {
       try {
         const info = await this.getCachedInfo();
         if (info?.Wxid) this.selfId = info.Wxid;
+        if (info?.NickName) this.username = info.NickName;
+        if (info?.HeadUrl) this.avatar = info.HeadUrl;
       } catch {}
       if (!this.selfId) this.selfId = this.config.selfId;
       this.status = 1;
@@ -236,6 +238,8 @@ class WeChatRobotBot extends Bot {
           try {
             const info = await this._http.get("/api/v1/robot/get-cached-info");
             if (info?.data?.Wxid) this.selfId = info.data.Wxid;
+            if (info?.data?.NickName) this.username = info.data.NickName;
+            if (info?.data?.HeadUrl) this.avatar = info.data.HeadUrl;
           } catch {}
           this.status = 1;
           this.logger.info("health: robot reconnected");

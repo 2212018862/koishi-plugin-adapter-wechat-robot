@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.3 (2026-05-28)
+
+### ✨ 改进
+
+- 设置机器人头像和昵称（从 wechat-robot-client 的 cached-info 获取）
+- Status 页面现在能显示微信机器人头像
+
 ## 2.0.2 (2026-05-28)
 
 ### 🐛 Bug Fix
