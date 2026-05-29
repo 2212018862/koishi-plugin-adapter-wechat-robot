@@ -102,6 +102,7 @@ class WeChatRobotBot extends Bot {
     this._pollTimer = null;
     this._mysqlPool = null;
     this._healthFails = 0;
+    this._contactCache = {};  // wxid -> { nickname, avatar }
     this._healthHttp = ctx.http.extend({
       endpoint: config.endpoint,
       timeout: 3000,
@@ -140,6 +141,7 @@ class WeChatRobotBot extends Bot {
       try {
         await this._updateBotInfo();
       } catch {}
+      await this._loadContacts();
       this.status = 1;
       this.logger.info("robot %s connected (mode=%s)", this.selfId, this.mode);
     } catch (e) {
@@ -234,6 +236,7 @@ class WeChatRobotBot extends Bot {
         this._healthFails = 0;
         if (this.status !== 1) {
           await this._updateBotInfo();
+          await this._loadContacts();
           this.status = 1;
           this.logger.info("health: robot reconnected");
         }
@@ -324,6 +327,37 @@ class WeChatRobotBot extends Bot {
     return r && r.data ? r.data : r;
   }
 
+  async _loadContacts() {
+    try {
+      const r = await this._http.get("/api/v1/robot/contacts");
+      const items = (r && r.data ? r.data.items : r.items) || [];
+      for (const item of items) {
+        const wxid = item.wechat_id || item.WechatId || "";
+        const nickname = item.nickname || item.NickName || "";
+        const avatar = item.avatar || item.Avatar || "";
+        if (wxid) this._contactCache[wxid] = { nickname, avatar };
+      }
+      this.logger.info("loaded %d contacts", items.length);
+    } catch (e) {
+      this.logger.debug("load contacts failed: %s", e.message || e);
+    }
+  }
+
+  getContactName(wxid) {
+    return this._contactCache[wxid]?.nickname || wxid;
+  }
+
+  async getGuildMember(guildId, userId) {
+    if (!this._contactCache[userId]) await this._loadContacts();
+    const contact = this._contactCache[userId];
+    return {
+      userId,
+      name: contact?.nickname || userId,
+      avatar: contact?.avatar || "",
+      nickname: contact?.nickname || "",
+    };
+  }
+
   async sendTextMessage(toWxid, content, atList) {
     const body = { to_wxid: toWxid, content };
     if (atList?.length) body.at = atList;
@@ -390,7 +424,7 @@ function toSession(bot, msg) {
     const colon = content.indexOf(":");
     if (colon > 0) { senderId = content.substring(0, colon); content = content.substring(colon + 1).trim(); }
   }
-  session.author = { userId: senderId, username: senderId, isBot: false };
+  session.author = { userId: senderId, username: bot.getContactName(senderId), isBot: false };
   session.userId = senderId;
 
   switch (msg.MsgType) {
@@ -435,7 +469,7 @@ function toSessionFromRow(bot, row) {
   if (isChatRoom && row.sender_wxid) {
     senderId = row.sender_wxid;
   }
-  session.author = { userId: senderId, username: senderId, isBot: false };
+  session.author = { userId: senderId, username: bot.getContactName(senderId), isBot: false };
   session.userId = senderId;
 
   switch (msgType) {
