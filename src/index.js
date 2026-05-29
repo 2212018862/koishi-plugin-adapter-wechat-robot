@@ -86,7 +86,7 @@ const Config = Schema.intersect([
 
 // ============ Bot ============
 class WeChatRobotBot extends Bot {
-  static inject = ["http", "server"];
+  static inject = ["http", "server", "database"];
   static Config = Config;
 
   constructor(ctx, config) {
@@ -388,7 +388,7 @@ WeChatRobotBot.MessageEncoder = class extends MessageEncoder {
     for (const el of elements || []) {
       if (el.type === "text") textParts.push(el.attrs?.content || "");
       else if (el.type === "at" && el.attrs?.id) atList.push(el.attrs.id);
-      else if (el.type === "image" && el.attrs?.src) imageUrls.push(el.attrs.src);
+      else if ((el.type === "image" || el.type === "img") && el.attrs?.src) imageUrls.push(el.attrs.src);
       else if (el.attrs?.content) textParts.push(el.attrs.content);
     }
     const text = textParts.join("").trim();
@@ -426,6 +426,11 @@ function toSession(bot, msg) {
   }
   session.author = { userId: senderId, username: bot.getContactName(senderId), isBot: false };
   session.userId = senderId;
+
+  // Sync nickname to interactive_users table for leaderboard display
+  try {
+    bot.ctx.database.set('interactive_users', { id: senderId, platform: 'wechat-robot' }, { nickname: bot.getContactName(senderId) }).catch(() => {});
+  } catch (e) { /* ignore */ }
 
   switch (msg.MsgType) {
     case 1:
