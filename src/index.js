@@ -384,16 +384,20 @@ WeChatRobotBot.MessageEncoder = class extends MessageEncoder {
   async flush() {
     const { channelId, elements } = this.session;
     if (!channelId) return;
-    const textParts = [], atList = [], imageUrls = [];
+    const textParts = [], atList = [], imageUrls = [], audioUrls = [], videoUrls = [];
     for (const el of elements || []) {
       if (el.type === "text") textParts.push(el.attrs?.content || "");
       else if (el.type === "at" && el.attrs?.id) atList.push(el.attrs.id);
       else if ((el.type === "image" || el.type === "img") && el.attrs?.src) imageUrls.push(el.attrs.src);
+      else if ((el.type === "audio" || el.type === "voice") && el.attrs?.src) audioUrls.push(el.attrs.src);
+      else if (el.type === "video" && el.attrs?.src) videoUrls.push(el.attrs.src);
       else if (el.attrs?.content) textParts.push(el.attrs.content);
     }
     const text = textParts.join("").trim();
     if (text) await this.bot.sendTextMessage(channelId, text, atList.length ? atList : undefined);
     for (const url of imageUrls) await this.bot.sendImageByUrl(channelId, [url]);
+    for (const url of audioUrls) await this.bot.sendVoice(channelId, url);
+    for (const url of videoUrls) await this.bot.sendVideoByUrl(channelId, [url]);
   }
 };
 
