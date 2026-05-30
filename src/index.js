@@ -373,7 +373,28 @@ class WeChatRobotBot extends Bot {
   }
 
   async sendVoice(toWxid, url) {
-    return this._http.post("/api/v1/robot/message/send/voice/url", { to_wxid: toWxid, voice_url: url });
+    // Download audio file, then upload as multipart form
+    // wechat-robot-client expects file upload at /api/v1/robot/message/send/voice
+    try {
+      const resp = await this._http.get(url, { responseType: "arraybuffer" });
+      const buffer = Buffer.from(resp);
+      let ext = ".mp3";
+      if (url.includes(".amr")) ext = ".amr";
+      else if (url.includes(".wav")) ext = ".wav";
+      else if (url.includes(".silk")) ext = ".silk";
+      else if (url.includes(".m4a")) ext = ".m4a";
+      const FormData = require("form-data");
+      const form = new FormData();
+      form.append("to_wxid", toWxid);
+      form.append("voice", buffer, { filename: "voice" + ext, contentType: "audio/mpeg" });
+      return this._http.post("/api/v1/robot/message/send/voice", form, {
+        headers: form.getHeaders(),
+        timeout: 60000,
+      });
+    } catch (e) {
+      this.logger.error("sendVoice failed: %s", e.message || e);
+      throw e;
+    }
   }
 }
 

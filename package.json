@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-adapter-wechat-robot",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "WeChat robot adapter for wechat-robot-client with webhook and MySQL polling support",
   "main": "src/index.js",
   "files": [
@@ -40,6 +40,7 @@
     "koishi": "^4.0.0"
   },
   "dependencies": {
-    "mysql2": "^3.0.0"
+    "mysql2": "^3.0.0",
+    "form-data": "^4.0.0"
   }
 }

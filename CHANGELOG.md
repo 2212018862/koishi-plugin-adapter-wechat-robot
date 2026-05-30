@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.2 (2026-05-31)
+
+### 🐛 Bug Fix
+
+- **修复语音发送失败** — `sendVoice()` 调用的 API 端点 `/api/v1/robot/message/send/voice/url` 不存在
+  - wechat-robot-client 的语音接口是 `POST /api/v1/robot/message/send/voice`，需要 multipart 文件上传
+  - 现在先下载音频文件，再以 form-data 方式上传
+  - 支持 `.mp3`、`.amr`、`.wav`、`.silk`、`.m4a` 格式
+- 新增 `form-data` 依赖
+
 ## 2.0.3 (2026-05-28)
 
 ### ✨ 改进
